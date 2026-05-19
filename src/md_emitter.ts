@@ -10,6 +10,13 @@
  */
 
 import { tokenize, type Token, type Attribute } from "./tokenizer.ts";
+import {
+  SKIP_ELEMENTS,
+  SKIP_VOID_ELEMENTS,
+  BLOCK_ELEMENTS,
+  INLINE_FORMAT_ELEMENTS,
+  VOID_ELEMENTS,
+} from "./element_classification.ts";
 
 // ── Event Types ──────────────────────────────────────────────────────
 
@@ -18,43 +25,14 @@ export type MdEvent =
   | { type: "open"; name: string; attributes: Attribute[] }
   | { type: "close"; name: string };
 
-// ── Element Classification ───────────────────────────────────────────
-
-/** Elements whose entire subtree is discarded (no text content). */
-export const SKIP_ELEMENTS = new Set([
-  "script", "style", "head", "meta", "link", "title",
-  "noscript", "template", "slot", "base",
-]);
-
-/** Void elements that are also skip elements (no closing tag, don't affect depth). */
-export const SKIP_VOID_ELEMENTS = new Set([
-  "meta", "link", "base",
-]);
-
-/** Known block-level elements. */
-export const BLOCK_ELEMENTS = new Set([
-  "address", "article", "aside", "blockquote", "br", "caption",
-  "dd", "details", "dialog", "div", "dl", "dt", "fieldset",
-  "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
-  "h4", "h5", "h6", "header", "hgroup", "hr", "legend", "li",
-  "main", "nav", "ol", "p", "pre", "section", "summary",
-  "table", "tbody", "td", "tfoot", "th", "thead", "tr",
-  "ul",
-]);
-
-/** Known inline formatting elements. */
-export const INLINE_FORMAT_ELEMENTS = new Set([
-  "a", "abbr", "b", "bdi", "bdo", "code", "cite", "data",
-  "del", "dfn", "em", "i", "ins", "kbd", "mark", "q",
-  "rp", "rt", "ruby", "s", "samp", "small", "span",
-  "strike", "strong", "sub", "sup", "time", "u", "var",
-]);
-
-/** Void (self-closing) elements that never have children. */
-export const VOID_ELEMENTS = new Set([
-  "area", "base", "br", "col", "embed", "hr", "img",
-  "input", "link", "meta", "param", "source", "track", "wbr",
-]);
+// Re-export classification constants for backward compatibility
+export {
+  SKIP_ELEMENTS,
+  SKIP_VOID_ELEMENTS,
+  BLOCK_ELEMENTS,
+  INLINE_FORMAT_ELEMENTS,
+  VOID_ELEMENTS,
+};
 
 /** Check if an element name is a heading. Returns 1-6 or 0. */
 export function headingLevel(name: string): number {

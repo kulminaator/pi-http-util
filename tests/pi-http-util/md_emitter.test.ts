@@ -6,6 +6,7 @@ import { assert, describe, test } from "./test-harness.ts";
 import {
   emitEvents,
   SKIP_ELEMENTS,
+  SKIP_VOID_ELEMENTS,
   BLOCK_ELEMENTS,
   INLINE_FORMAT_ELEMENTS,
   VOID_ELEMENTS,
@@ -13,6 +14,10 @@ import {
   isListContainer,
   isTableRowElement,
 } from "../../src/md_emitter.ts";
+import {
+  RAW_TEXT_ELEMENTS,
+  SEARCH_SKIP_ELEMENTS,
+} from "../../src/element_classification.ts";
 
 describe("emitEvents()", () => {
 
@@ -195,5 +200,50 @@ describe("VOID_ELEMENTS", () => {
     assert.equal(VOID_ELEMENTS.has("hr"), true);
     assert.equal(VOID_ELEMENTS.has("meta"), true);
     assert.equal(VOID_ELEMENTS.has("link"), true);
+  });
+});
+
+describe("SKIP_VOID_ELEMENTS", () => {
+
+  test("contains void skip elements", () => {
+    assert.equal(SKIP_VOID_ELEMENTS.has("meta"), true);
+    assert.equal(SKIP_VOID_ELEMENTS.has("link"), true);
+    assert.equal(SKIP_VOID_ELEMENTS.has("base"), true);
+  });
+
+  test("does not contain non-void skip elements", () => {
+    assert.equal(SKIP_VOID_ELEMENTS.has("script"), false);
+    assert.equal(SKIP_VOID_ELEMENTS.has("style"), false);
+    assert.equal(SKIP_VOID_ELEMENTS.has("head"), false);
+  });
+});
+
+describe("RAW_TEXT_ELEMENTS", () => {
+
+  test("contains CDATA-like elements", () => {
+    assert.equal(RAW_TEXT_ELEMENTS.has("script"), true);
+    assert.equal(RAW_TEXT_ELEMENTS.has("style"), true);
+    assert.equal(RAW_TEXT_ELEMENTS.has("textarea"), true);
+  });
+
+  test("does not contain normal elements", () => {
+    assert.equal(RAW_TEXT_ELEMENTS.has("div"), false);
+    assert.equal(RAW_TEXT_ELEMENTS.has("noscript"), false);
+  });
+});
+
+describe("SEARCH_SKIP_ELEMENTS", () => {
+
+  test("contains non-visible elements", () => {
+    assert.equal(SEARCH_SKIP_ELEMENTS.has("script"), true);
+    assert.equal(SEARCH_SKIP_ELEMENTS.has("style"), true);
+  });
+
+  test("does not contain textarea (its content is visible)", () => {
+    assert.equal(SEARCH_SKIP_ELEMENTS.has("textarea"), false);
+  });
+
+  test("does not contain noscript (visible when JS disabled)", () => {
+    assert.equal(SEARCH_SKIP_ELEMENTS.has("noscript"), false);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "pi-http-util",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "HTTP utility functions for Pi Coding Agent",
   "main": "src/index.ts",
   "type": "module",

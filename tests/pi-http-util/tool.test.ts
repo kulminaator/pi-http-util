@@ -13,6 +13,7 @@ import {
   validateUrl,
   buildHeaders,
 } from "../../src/fetch.ts";
+import { defaultHttpClient } from "../../src/http_client.ts";
 
 // ── Server setup ─────────────────────────────────────────────────────
 
@@ -210,6 +211,50 @@ export async function runTests() {
       const afterKeys = Object.keys(sharedHeaders).sort().join(",");
       assert.equal(originalKeys, afterKeys, `Headers mutated: was ${originalKeys}, now ${afterKeys}`);
       assert(!("Content-Type" in sharedHeaders), "Content-Type should not be added to caller's object");
+    });
+  });
+
+  await describe("http_client", async () => {
+
+    test("defaultHttpClient delegates to global fetch", async () => {
+      const res = await defaultHttpClient.request(`${baseUrl}/html`, { method: "GET" });
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert(text.includes("<html>"));
+    });
+
+    test("mock client is used when injected", async () => {
+      const mockClient = {
+        request(_url: string, _init: RequestInit) {
+          return Promise.resolve(new Response("mocked response", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+          }));
+        },
+      };
+      const result = await executeFetch({
+        url: `${baseUrl}/html`,
+        method: "GET",
+        headers: buildHeaders(),
+        followRedirects: true,
+        strip: "none" as any,
+        client: mockClient,
+        signal: AbortSignal.timeout(5000),
+      });
+      assert.equal(result.strippedText, "mocked response");
+    });
+
+    test("default client is used when no client is provided", async () => {
+      const result = await executeFetch({
+        url: `${baseUrl}/json`,
+        method: "GET",
+        headers: buildHeaders(),
+        followRedirects: true,
+        strip: "none" as any,
+        signal: AbortSignal.timeout(5000),
+      });
+      const parsed = JSON.parse(result.strippedText);
+      assert.equal(parsed.message, "hello");
     });
   });
 

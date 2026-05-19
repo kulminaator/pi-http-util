@@ -21,6 +21,9 @@ import {
   resolveStripMethod,
 } from "./strip.ts";
 import { buildHeaders } from "./fetch.ts";
+import { SEARCH_SKIP_ELEMENTS } from "./element_classification.ts";
+import type { HttpClient } from "./http_client.ts";
+import { defaultHttpClient } from "./http_client.ts";
 
 // ── Defaults ─────────────────────────────────────────────────────────
 const DEFAULT_CONTEXT_LIMIT = 100;
@@ -33,69 +36,40 @@ const CONTEXT_MULTIPLIER = 5; // grab 5x context before stripping
  * map that maps each character index in the decoded string back to its
  * original HTML offset.
  *
+ * Uses the shared tokenizer for correct handling of comments, doctypes,
+ * malformed tags, and CDATA elements (script/style/textarea).
  * Skips content inside <script> / <style> blocks.
  * Decodes all HTML entities so "Click&nbsp;here" becomes "Click here"
  * and can be found by searching for "Click here".
  * Normalizes HTML whitespace (nbsp, emsp, etc.) to regular spaces
  * so searches with regular spaces match entity-encoded whitespace.
- *
- * Uses a direct scan of the HTML to track original positions correctly,
- * even when entity decoding changes text lengths.
  */
 function buildDecodedMap(html: string): { decoded: string; positions: number[] } {
   const decodedParts: string[] = [];
   const positions: number[] = [];
-  let i = 0;
-  const len = html.length;
-  let skipDepth = 0;
-  let skipElement = "";
+  let inSkipElement = false;
 
-  while (i < len) {
-    // Find next <
-    let nextLt = html.indexOf("<", i);
-    if (nextLt === -1) nextLt = len;
+  for (const token of tokenize(html)) {
+    if (token.kind === "tag") {
+      // Track skip elements (script, style)
+      if (!token.isClosing && SEARCH_SKIP_ELEMENTS.has(token.name)) {
+        inSkipElement = true;
+      } else if (token.isClosing && inSkipElement) {
+        inSkipElement = false;
+      }
+      continue; // tags themselves are not part of the decoded text
+    }
 
-    // Emit text before < (if any and not skipping)
-    if (nextLt > i && skipDepth === 0) {
-      const raw = html.slice(i, nextLt);
-      const decoded = decodeTextEntities(raw);
+    if (token.kind === "text" && !inSkipElement) {
+      const decoded = decodeTextEntities(token.data);
       // Normalize HTML whitespace to regular spaces
       const normalized = decoded.split("").map(ch => isHtmlWhitespace(ch) ? " " : ch).join("");
       for (let j = 0; j < normalized.length; j++) {
-        positions.push(i + j);
+        positions.push(token.start + j);
       }
       decodedParts.push(normalized);
     }
-
-    if (nextLt >= len) break;
-    i = nextLt;
-
-    // Find end of tag
-    const gtIdx = html.indexOf(">", i + 1);
-    if (gtIdx === -1) break; // malformed, stop
-
-    const tagContent = html.slice(i + 1, gtIdx);
-
-    // Skip <script> and <style> content (non-visible).
-    // Note: <noscript> is NOT skipped here — its content is visible when JS is disabled.
-    // This differs from the tokenizer's skip list which is for HTML-to-Markdown conversion.
-    if (tagContent.startsWith("/")) {
-      // Closing tag
-      const closeName = tagContent.slice(1).split(/\s/)[0].toLowerCase();
-      if (skipDepth > 0 && closeName === skipElement) {
-        skipDepth--;
-        skipElement = "";
-      }
-    } else {
-      // Opening tag
-      const openName = tagContent.split(/\s/)[0].toLowerCase();
-      if (openName === "script" || openName === "style") {
-        skipDepth++;
-        skipElement = openName;
-      }
-    }
-
-    i = gtIdx + 1;
+    // comments and doctypes are silently dropped
   }
 
   return { decoded: decodedParts.join(""), positions };
@@ -244,6 +218,7 @@ export async function inPageSearch(
   params: InPageSearchParams,
   signal: AbortSignal | undefined,
   onUpdate?: (update: { content: { type: "text"; text: string }[] }) => void,
+  client?: HttpClient,
 ): Promise<{
   results: SearchResult[];
   status: number;
@@ -269,7 +244,8 @@ export async function inPageSearch(
       content: [{ type: "text", text: `Fetching ${url} ...` }],
     });
 
-    const res = await fetch(url, {
+    const http = client ?? defaultHttpClient;
+    const res = await http.request(url, {
       method: "GET",
       headers,
       redirect: "follow",

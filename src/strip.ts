@@ -16,6 +16,7 @@ import { decodeTextEntities } from "./entities.ts";
 import { isHtmlWhitespace, collapseWhitespace, collapseWhitespacePreserveLines } from "./whitespace.ts";
 import { emitEvents } from "./md_emitter.ts";
 import { processEvents } from "./md_handler.ts";
+import { SEARCH_SKIP_ELEMENTS } from "./element_classification.ts";
 
 export type StripMode = "none" | "whitespace" | "attributes" | "tags" | "html2md";
 
@@ -107,12 +108,12 @@ export function stripTags(html: string): string {
 
   for (const token of tokenize(html)) {
     if (token.kind === "tag" && !token.isClosing &&
-        (token.name === "script" || token.name === "style")) {
+        SEARCH_SKIP_ELEMENTS.has(token.name)) {
       skipContent = true;
       continue;
     }
     if (token.kind === "tag" && token.isClosing &&
-        (token.name === "script" || token.name === "style")) {
+        SEARCH_SKIP_ELEMENTS.has(token.name)) {
       skipContent = false;
       continue;
     }

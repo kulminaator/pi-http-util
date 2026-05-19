@@ -18,10 +18,10 @@ export interface Attribute {
 
 /** Token types produced by the tokenizer. */
 export type Token =
-  | { kind: "text"; data: string }
-  | { kind: "tag"; name: string; isClosing: boolean; selfClosing: boolean; attributes: Attribute[] }
-  | { kind: "comment"; data: string }
-  | { kind: "doctype"; data: string };
+  | { kind: "text"; data: string; start: number; end: number }
+  | { kind: "tag"; name: string; isClosing: boolean; selfClosing: boolean; attributes: Attribute[]; start: number; end: number }
+  | { kind: "comment"; data: string; start: number; end: number }
+  | { kind: "doctype"; data: string; start: number; end: number };
 
 /** Check if a character is basic ASCII whitespace (for tokenizer attribute parsing). */
 function isBasicWhitespace(ch: string): boolean {
@@ -51,11 +51,11 @@ export function* tokenize(html: string): Generator<Token> {
     if (html[i] === "<" && html.slice(i, i + 4) === "<!--") {
       const end = html.indexOf("-->", i + 4);
       if (end !== -1) {
-        yield { kind: "comment", data: html.slice(i + 4, end) };
+        yield { kind: "comment", data: html.slice(i + 4, end), start: i, end: end + 3 };
         i = end + 3;
       } else {
         // Malformed comment — treat as text
-        yield { kind: "text", data: html[i] };
+        yield { kind: "text", data: html[i], start: i, end: i + 1 };
         i++;
       }
       continue;
@@ -65,10 +65,10 @@ export function* tokenize(html: string): Generator<Token> {
     if (html[i] === "<" && html.slice(i, i + 9).toUpperCase() === "<!DOCTYPE") {
       const end = html.indexOf(">", i + 9);
       if (end !== -1) {
-        yield { kind: "doctype", data: html.slice(i + 9, end) };
+        yield { kind: "doctype", data: html.slice(i + 9, end), start: i, end: end + 1 };
         i = end + 1;
       } else {
-        yield { kind: "text", data: html[i] };
+        yield { kind: "text", data: html[i], start: i, end: i + 1 };
         i++;
       }
       continue;
@@ -88,7 +88,7 @@ export function* tokenize(html: string): Generator<Token> {
 
       if (!name) {
         // Not a valid tag start (e.g. "< 5")
-        yield { kind: "text", data: html[i] };
+        yield { kind: "text", data: html[i], start: i, end: i + 1 };
         i++;
         continue;
       }
@@ -163,30 +163,30 @@ export function* tokenize(html: string): Generator<Token> {
       // containing full HTML markup) from confusing depth-based skip logic.
       // <textarea> content is raw text, not HTML markup.
       if (!isClosing && (tagName === "script" || tagName === "style" || tagName === "textarea")) {
-        yield { kind: "tag", name: tagName, isClosing: false, selfClosing, attributes };
+        yield { kind: "tag", name: tagName, isClosing: false, selfClosing, attributes, start: i, end: start };
         const closeTag = `</${tagName}>`;
         const closeIdx = html.toLowerCase().indexOf(closeTag, i);
         if (closeIdx !== -1) {
           // Emit raw content as a single text token
           const rawContent = html.slice(i, closeIdx);
           if (rawContent.length > 0) {
-            yield { kind: "text", data: rawContent };
+            yield { kind: "text", data: rawContent, start: i, end: closeIdx };
           }
           // Emit the closing tag
-          yield { kind: "tag", name: tagName, isClosing: true, selfClosing: false, attributes: [] };
+          yield { kind: "tag", name: tagName, isClosing: true, selfClosing: false, attributes: [], start: closeIdx, end: closeIdx + closeTag.length };
           i = closeIdx + closeTag.length;
         } else {
           // Malformed: no closing tag — emit rest as text
           const rawContent = html.slice(i);
           if (rawContent.length > 0) {
-            yield { kind: "text", data: rawContent };
+            yield { kind: "text", data: rawContent, start: i, end: len };
           }
           i = len;
         }
         continue;
       }
 
-      yield { kind: "tag", name: tagName, isClosing, selfClosing, attributes };
+      yield { kind: "tag", name: tagName, isClosing, selfClosing, attributes, start: i, end: start };
       i = start;
       continue;
     }
@@ -195,7 +195,7 @@ export function* tokenize(html: string): Generator<Token> {
     let textEnd = html.indexOf("<", i);
     if (textEnd === -1) textEnd = len;
     if (textEnd > i) {
-      yield { kind: "text", data: html.slice(i, textEnd) };
+      yield { kind: "text", data: html.slice(i, textEnd), start: i, end: textEnd };
     }
     i = textEnd;
   }

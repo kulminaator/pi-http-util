@@ -7,6 +7,8 @@
  */
 
 import { resolveStripMethod, applyStrip, type StripMode } from "./strip.ts";
+import type { HttpClient } from "./http_client.ts";
+import { defaultHttpClient } from "./http_client.ts";
 
 // ── Chrome User-Agent (generic, non-fingerprinting) ──────────────────
 const CHROME_UA =
@@ -24,6 +26,7 @@ export interface FetchParams {
   followRedirects: boolean;
   strip: StripMode;
   signal?: AbortSignal;
+  client?: HttpClient;
 }
 
 export interface FetchResult {
@@ -103,7 +106,8 @@ export async function executeFetch(params: FetchParams): Promise<FetchResult> {
   }
 
   // ── Fetch ───────────────────────────────────────────────────────
-  const res = await fetch(url, fetchOptions);
+  const client = params.client ?? defaultHttpClient;
+  const res = await client.request(url, fetchOptions);
 
   const finalUrl = res.url;
   const status = res.status;

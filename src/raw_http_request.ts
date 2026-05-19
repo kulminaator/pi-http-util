@@ -8,6 +8,8 @@
 
 import fs from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import type { HttpClient } from "./http_client.ts";
+import { defaultHttpClient } from "./http_client.ts";
 
 // ── Defaults ─────────────────────────────────────────────────────────
 
@@ -108,6 +110,7 @@ export function checkSizeLimit(
 export async function executeRawRequest(
   params: RawRequestParams,
   signal?: AbortSignal,
+  client?: HttpClient,
 ): Promise<RawRequestResult> {
   const {
     http_url,
@@ -175,7 +178,8 @@ export async function executeRawRequest(
   // ── Fetch ────────────────────────────────────────────────────────
   let responseText: string;
   try {
-    const res = await fetch(http_url, fetchOptions);
+    const http = client ?? defaultHttpClient;
+    const res = await http.request(http_url, fetchOptions);
     result.http_response_code = res.status;
 
     // Collect response headers

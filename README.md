@@ -36,6 +36,10 @@ Install directly from the GitHub repository:
 ```bash
 pi install git:github.com/kulminaator/pi-http-util
 ```
+or from npm:
+```bash
+pi install npm:pi-http-util
+```
 
 This writes the package to your user settings (`~/.pi/agent/settings.json`) so it is available for all projects.
 Use `-l` to install project-locally (`.pi/settings.json`) instead:
