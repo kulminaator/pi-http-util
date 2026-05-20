@@ -53,7 +53,7 @@ export function applyStrip(text: string, mode: StripMode): string {
 
 /** Get an attribute value from a tag token by name (case-insensitive). */
 export function getAttr(token: Extract<Token, { kind: "tag" }>, name: string): string | null {
-  const attr = token.attributes.find(a => a.name.toLowerCase() === name);
+  const attr = token.attributes.find(a => a.name.toLowerCase() === name.toLowerCase());
   return attr?.value ?? null;
 }
 

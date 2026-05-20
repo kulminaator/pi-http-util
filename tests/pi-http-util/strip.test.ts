@@ -10,7 +10,12 @@ import {
   stripAttributes,
   stripTags,
   stripHtmlToMd,
+  getAttr,
+  getAttrDecoded,
+  resolveStripMethod,
+  applyStrip,
 } from "../../src/core.ts";
+import { collectTokens } from "./test-harness.ts";
 
 describe("stripNone()", () => {
 
@@ -641,6 +646,248 @@ describe("stripHtmlToMd() — edge cases", () => {
     assert(result.includes("hello"));
     assert(result.includes("world"));
     assert(result.includes("goodbye"));
+  });
+});
+
+// ── stripAttributes() — additional edge cases ──────────────────────
+
+describe("stripAttributes() — edge cases", () => {
+
+  test("unquoted attribute values removed", () => {
+    const result = stripAttributes("<div class=foo id=bar>");
+    assert.equal(result, "<div>");
+  });
+
+  test("empty attribute values removed", () => {
+    const result = stripAttributes('<div class="" id="">');
+    assert.equal(result, "<div>");
+  });
+
+  test("event handler attributes removed", () => {
+    const result = stripAttributes('<button onclick="alert(1)" onmouseover="track()">Click</button>');
+    assert.equal(result, "<button>Click</button>");
+    assert(!result.includes("onclick"));
+    assert(!result.includes("onmouseover"));
+    assert(!result.includes("alert"));
+  });
+
+  test("data-* attributes removed", () => {
+    const result = stripAttributes('<div data-id="123" data-foo="bar">content</div>');
+    assert.equal(result, "<div>content</div>");
+  });
+
+  test("attributes with special chars in values removed", () => {
+    const result = stripAttributes('<div title="a &amp; b <c>">text</div>');
+    assert.equal(result, "<div>text</div>");
+  });
+
+  test("mixed attribute types (boolean + quoted + unquoted)", () => {
+    const result = stripAttributes('<input type=text disabled value="hello" />');
+    assert.equal(result, "<input/>");
+  });
+
+  test("attributes with spaces around =", () => {
+    const result = stripAttributes('<div class = "foo" id = "bar">');
+    assert.equal(result, "<div>");
+  });
+
+  test("uppercase tag names handled (tokenizer lowercases)", () => {
+    const result = stripAttributes('<DIV CLASS="x"><P ID="y">hello</P></DIV>');
+    assert(result.includes("<div>"));
+    assert(result.includes("<p>"));
+    assert(result.includes("</p>"));
+    assert(result.includes("</div>"));
+    assert(!result.includes("CLASS"));
+    assert(!result.includes("ID"));
+  });
+
+  test("attributes with newlines in values", () => {
+    const result = stripAttributes('<div data-x="line1\nline2">text</div>');
+    assert.equal(result, "<div>text</div>");
+  });
+
+  test("style attribute removed", () => {
+    const result = stripAttributes('<div style="color: red; font-size: 12px;">styled</div>');
+    assert.equal(result, "<div>styled</div>");
+  });
+
+  test("multiple tags with attributes in sequence", () => {
+    const result = stripAttributes('<a href="/1">one</a><a href="/2">two</a><a href="/3">three</a>');
+    // No whitespace between adjacent tags → no space inserted by collapseWhitespace
+    assert.equal(result, "<a>one</a><a>two</a><a>three</a>");
+  });
+
+  test("multiple tags with whitespace between them", () => {
+    const result = stripAttributes('<a href="/1">one</a> <a href="/2">two</a> <a href="/3">three</a>');
+    assert.equal(result, "<a>one</a> <a>two</a> <a>three</a>");
+  });
+
+  test("closing tags with no attributes pass through", () => {
+    const result = stripAttributes('<div class="x">text</div>');
+    assert(result.includes("</div>"));
+  });
+
+  test("nested tags with attributes", () => {
+    const result = stripAttributes('<div class="outer"><span id="inner"><b title="bold">text</b></span></div>');
+    assert.equal(result, "<div><span><b>text</b></span></div>");
+  });
+
+  test("attribute values containing = sign", () => {
+    const result = stripAttributes('<div data-eq="a=b+c">text</div>');
+    assert.equal(result, "<div>text</div>");
+  });
+
+  test("attribute values containing quotes", () => {
+    const result = stripAttributes('<div title="he said \'hi\'">text</div>');
+    assert.equal(result, "<div>text</div>");
+  });
+});
+
+// ── getAttr() / getAttrDecoded() ────────────────────────────────────
+
+describe("getAttr()", () => {
+
+  test("finds attribute by name (case-insensitive)", () => {
+    const tokens = collectTokens('<a href="https://example.com" target="_blank">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttr(tag, "href"), "https://example.com");
+    assert.equal(getAttr(tag, "HREF"), "https://example.com");
+    assert.equal(getAttr(tag, "target"), "_blank");
+  });
+
+  test("returns null for missing attribute", () => {
+    const tokens = collectTokens('<a href="/">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttr(tag, "class"), null);
+    assert.equal(getAttr(tag, "id"), null);
+  });
+
+  test("returns null for boolean attribute value", () => {
+    const tokens = collectTokens("<input disabled>");
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttr(tag, "disabled"), null);
+  });
+
+  test("tag with no attributes", () => {
+    const tokens = collectTokens("<div>");
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttr(tag, "class"), null);
+  });
+});
+
+describe("getAttrDecoded()", () => {
+
+  test("decodes entities in attribute value", () => {
+    const tokens = collectTokens('<a title="hello &amp; world">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttrDecoded(tag, "title"), "hello & world");
+  });
+
+  test("decodes nbsp in attribute value", () => {
+    const tokens = collectTokens('<a title="foo&nbsp;bar">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttrDecoded(tag, "title"), "foo\u00A0bar");
+  });
+
+  test("returns null for missing attribute", () => {
+    const tokens = collectTokens('<a href="/">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttrDecoded(tag, "title"), null);
+  });
+
+  test("returns null for boolean attribute", () => {
+    const tokens = collectTokens("<input disabled>");
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttrDecoded(tag, "disabled"), null);
+  });
+
+  test("decodes numeric entities in attribute value", () => {
+    const tokens = collectTokens('<a title="&#8364;100">');
+    const tag = tokens[0] as { kind: "tag"; attributes: Array<{ name: string; value: string | null }> };
+    assert.equal(getAttrDecoded(tag, "title"), "\u20AC100");
+  });
+});
+
+// ── resolveStripMethod() ────────────────────────────────────────────
+
+describe("resolveStripMethod()", () => {
+
+  test("text/html applies strip normally", () => {
+    assert.equal(resolveStripMethod("attributes", "text/html"), "attributes");
+    assert.equal(resolveStripMethod("tags", "text/html"), "tags");
+    assert.equal(resolveStripMethod("html2md", "text/html"), "html2md");
+  });
+
+  test("text/html with charset applies strip normally", () => {
+    assert.equal(resolveStripMethod("attributes", "text/html; charset=utf-8"), "attributes");
+  });
+
+  test("application/xhtml+xml applies strip normally", () => {
+    assert.equal(resolveStripMethod("html2md", "application/xhtml+xml"), "html2md");
+  });
+
+  test("application/xhtml+xml with charset applies strip normally", () => {
+    assert.equal(resolveStripMethod("tags", "application/xhtml+xml; charset=utf-8"), "tags");
+  });
+
+  test("application/json falls back to none", () => {
+    assert.equal(resolveStripMethod("attributes", "application/json"), "none");
+    assert.equal(resolveStripMethod("html2md", "application/json"), "none");
+  });
+
+  test("text/plain falls back to none", () => {
+    assert.equal(resolveStripMethod("tags", "text/plain"), "none");
+    assert.equal(resolveStripMethod("whitespace", "text/plain"), "none");
+  });
+
+  test("requested none always returns none (even for HTML)", () => {
+    assert.equal(resolveStripMethod("none", "text/html"), "none");
+    assert.equal(resolveStripMethod("none", "text/html; charset=utf-8"), "none");
+    assert.equal(resolveStripMethod("none", "application/json"), "none");
+  });
+
+  test("unknown content type falls back to none", () => {
+    assert.equal(resolveStripMethod("attributes", "image/png"), "none");
+    assert.equal(resolveStripMethod("tags", "application/octet-stream"), "none");
+  });
+
+  test("case-insensitive content type matching", () => {
+    assert.equal(resolveStripMethod("attributes", "TEXT/HTML"), "attributes");
+    assert.equal(resolveStripMethod("html2md", "Text/Html; Charset=UTF-8"), "html2md");
+  });
+});
+
+// ── applyStrip() dispatcher ─────────────────────────────────────────
+
+describe("applyStrip()", () => {
+
+  test("dispatches to stripNone for 'none' mode", () => {
+    const input = "<div class='x'>hello</div>";
+    assert.equal(applyStrip(input, "none"), input);
+  });
+
+  test("dispatches to stripWhitespace for 'whitespace' mode", () => {
+    assert.equal(applyStrip("foo   bar", "whitespace"), "foo bar");
+  });
+
+  test("dispatches to stripAttributes for 'attributes' mode", () => {
+    const result = applyStrip('<div class="x">hello</div>', "attributes");
+    assert.equal(result, "<div>hello</div>");
+  });
+
+  test("dispatches to stripTags for 'tags' mode", () => {
+    assert.equal(applyStrip("<p>hello</p>", "tags"), "hello");
+  });
+
+  test("dispatches to stripHtmlToMd for 'html2md' mode", () => {
+    const result = applyStrip("<h1>Title</h1>", "html2md");
+    assert(result.includes("# Title"));
+  });
+
+  test("unknown mode falls back to stripNone", () => {
+    const input = "<div>hello</div>";
+    // @ts-expect-error — testing unknown mode fallback
+    assert.equal(applyStrip(input, "unknown"), input);
   });
 });
 
